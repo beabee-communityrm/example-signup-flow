@@ -1,0 +1,14 @@
+{
+  "scripts": {
+    "build": "esbuild src/main.js --bundle --outfile=main.js",
+    "start": "npm run build && st -nc -i index.html"
+  },
+  "dependencies": {
+    "@beabee/beabee-common": "^0.21.0",
+    "@stripe/stripe-js": "^4.8.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.0",
+    "st": "^3.0.0"
+  }
+}
