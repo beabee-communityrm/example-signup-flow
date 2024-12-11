@@ -170,7 +170,19 @@ function handleStep2() {
               stripeIsComplete = false;
 
               const paymentElement = stripeElements.create('payment', {
-                fields: { billingDetails: { email: 'never', name: 'never' } }
+                fields: { billingDetails: { email: 'never', name: 'never' } },
+                applePay: {
+                  recurringPaymentRequest: {
+                    paymentDescription: 'Membership',
+                    managementURL: frontendUrl + '/profile/contribution',
+                    regularBilling: {
+                      label: 'Recurring contribution',
+                      amount: contribution.amount * 100,
+                      recurringPaymentIntervalUnit: contribution.period === 'monthly' ? 'month' : 'year',
+                      recurringPaymentIntervalCount: 1
+                    }
+                  }
+                }
               });
               paymentElement.mount('.js-stripe');
               paymentElement.on('change', e => stripeIsComplete = e.complete);
