@@ -28,6 +28,16 @@ const stripeAppearance = {
 
 const stepFormEls = $$('.js-form');
 
+// Instance settings loaded from the API: fee country, Stripe key, minimum amount
+let joinContent, paymentContent;
+const contentPromise = Promise.all([
+  fetch(`${apiUrl}/content/join`).then(r => r.json()),
+  fetch(`${apiUrl}/content/payment`).then(r => r.json()),
+]).then(([join, payment]) => {
+  joinContent = join;
+  paymentContent = payment;
+});
+
 const feeEl = $('.js-fee');
 const feeAmountEl = $('.js-fee-amount');
 const feeOptInEl = $('.js-fee-opt-in');
@@ -63,15 +73,18 @@ function getContribution() {
  */
 function updateFee() {
   const contribution = getContribution();
-  const fee = calcPaymentFee(contribution, 'eu');
+  const fee = calcPaymentFee(contribution, paymentContent.stripeCountry);
 
-  const forceFee = contribution.amount === 1;
+  // Only monthly contributions can opt to absorb the fee, and only if the
+  // instance has the option enabled
+  const showFee = joinContent.showAbsorbFee && contribution.period === 'monthly';
+  const forceFee = showFee && contribution.amount === 1;
   feeInputEl.disabled = forceFee;
   if (forceFee) {
     feeInputEl.checked = true;
   }
 
-  feeEl.classList.toggle('d-none', contribution.period !== 'monthly');
+  feeEl.classList.toggle('d-none', !showFee);
   feeOptInEl.classList.toggle('d-none', forceFee);
   feeRequiredEl.classList.toggle('d-none', !forceFee);
   feeAmountEl.textContent = fee.toFixed(2);
@@ -109,8 +122,10 @@ stepFormEls[0].addEventListener('change', updateStep1);
  * First step handler. Simply updates the fee display and loads the next step
  */
 function handleStep1() {
-  updateFee();
-  return Promise.resolve(true);
+  return contentPromise.then(() => {
+    updateFee();
+    return true;
+  });
 }
 
 // These globals are used to pass Stripe related state between steps 2 and 3
@@ -128,8 +143,8 @@ function handleStep2() {
     contribution: {
       amount: contribution.amount,
       period: contribution.period,
-      // Only monthly contributions can opt to absorb the fee
-      payFee: contribution.payFee && contribution.period === 'monthly',
+      // The API rejects payFee for annual contributions or if the option is disabled
+      payFee: contribution.payFee && contribution.period === 'monthly' && joinContent.showAbsorbFee,
       prorate: false,
       paymentMethod: contribution.paymentMethod,
       completeUrl
@@ -156,39 +171,34 @@ function handleStep2() {
         window.location.href = respData.redirectUrl;
         return false;
       } else {
-        // Fetch public Stripe key
-        return fetch(`${apiUrl}/content/join`, { headers: {"Content-Type": "application/json"} })
-          .then(r => r.json())
-          .then(joinData => {
-            // ... then load Stripe payment form
-            return loadStripe(joinData.stripePublicKey).then(_stripe => {
-              stripe = _stripe;
-              stripeElements = stripe.elements({
-                clientSecret: respData.clientSecret,
-                appearance: stripeAppearance
-              });
-              stripeIsComplete = false;
+        // Load Stripe payment form
+        return loadStripe(paymentContent.stripePublicKey).then(_stripe => {
+          stripe = _stripe;
+          stripeElements = stripe.elements({
+            clientSecret: respData.clientSecret,
+            appearance: stripeAppearance
+          });
+          stripeIsComplete = false;
 
-              const paymentElement = stripeElements.create('payment', {
-                fields: { billingDetails: { email: 'never', name: 'never' } },
-                applePay: {
-                  recurringPaymentRequest: {
-                    paymentDescription: 'Membership',
-                    managementURL: frontendUrl + '/profile/contribution',
-                    regularBilling: {
-                      label: 'Recurring contribution',
-                      amount: contribution.amount * 100,
-                      recurringPaymentIntervalUnit: contribution.period === 'monthly' ? 'month' : 'year',
-                      recurringPaymentIntervalCount: 1
-                    }
-                  }
+          const paymentElement = stripeElements.create('payment', {
+            fields: { billingDetails: { email: 'never', name: 'never' } },
+            applePay: {
+              recurringPaymentRequest: {
+                paymentDescription: 'Membership',
+                managementURL: frontendUrl + '/profile/contribution',
+                regularBilling: {
+                  label: 'Recurring contribution',
+                  amount: contribution.amount * 100,
+                  recurringPaymentIntervalUnit: contribution.period === 'monthly' ? 'month' : 'year',
+                  recurringPaymentIntervalCount: 1
                 }
-              });
-              paymentElement.mount('.js-stripe');
-              paymentElement.on('change', e => stripeIsComplete = e.complete);
+              }
+            }
+          });
+          paymentElement.mount('.js-stripe');
+          paymentElement.on('change', e => stripeIsComplete = e.complete);
 
-              return new Promise(resolve => paymentElement.on('ready', () => resolve(true)));
-            });
+          return new Promise(resolve => paymentElement.on('ready', () => resolve(true)));
         });
       }
     });
@@ -278,4 +288,9 @@ for (const el of stepFormEls) {
 
 // Update initial UI state (triggers handlers above)
 updateStep1();
-updateFee();
+
+// Minimum amounts are enforced by the API
+contentPromise.then(() => {
+  $('[name=custom_amount_monthly]').min = joinContent.minMonthlyAmount;
+  $('[name=custom_amount_annually]').min = joinContent.minMonthlyAmount * 12;
+});
