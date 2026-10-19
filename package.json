@@ -4,7 +4,7 @@
     "start": "npm run build && st -nc -i index.html"
   },
   "dependencies": {
-    "@beabee/beabee-common": "^0.21.0",
+    "@beabee/beabee-common": "^0.44.2",
     "@stripe/stripe-js": "^4.8.0"
   },
   "devDependencies": {
