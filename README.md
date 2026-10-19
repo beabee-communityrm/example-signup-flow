@@ -26,12 +26,45 @@ there.
 
 ## How the form talks to beabee and Stripe
 
+The custom form only handles the steps up to the payment provider. The
+redirect back lands on the beabee frontend, which completes the signup and
+asks the user to confirm their email address.
+
+### Card, PayPal and other Stripe methods
+
 ```mermaid
 sequenceDiagram
     participant U as User
     participant F as Custom form
     participant API as beabee API
     participant S as Stripe
+    participant FE as beabee frontend
+
+    F->>API: GET /content/join, GET /content/payment
+    API-->>F: min amount, absorb fee flag, Stripe key, fee country
+
+    U->>F: Step 1: period and amount
+    U->>F: Step 2: email, payment method, fee opt-in
+    F->>API: POST /signup
+    API-->>F: clientSecret
+
+    F->>S: Load Payment Element with clientSecret
+    U->>F: Step 3: name and payment details
+    F->>S: confirmSetup(return_url=/join/complete?firstName&lastName)
+    S-->>FE: Redirect to /join/complete?setup_intent=...
+
+    FE->>API: POST /signup/complete
+    API-->>U: Confirmation email
+    FE-->>U: /join/confirm-email
+```
+
+### Direct debit via GoCardless
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as Custom form
+    participant API as beabee API
     participant GC as GoCardless
     participant FE as beabee frontend
 
@@ -41,23 +74,13 @@ sequenceDiagram
     U->>F: Step 1: period and amount
     U->>F: Step 2: email, payment method, fee opt-in
     F->>API: POST /signup
-    alt Stripe payment method
-        API-->>F: clientSecret
-        F->>S: Load Payment Element with clientSecret
-        U->>F: Step 3: name and payment details
-        F->>S: confirmSetup(return_url=/join/complete?firstName&lastName)
-        S-->>FE: Redirect to /join/complete?setup_intent=...
-    else Direct debit
-        API-->>F: redirectUrl
-        F->>GC: Redirect to GoCardless mandate page
-        U->>GC: Enter bank details
-        GC-->>FE: Redirect to /join/complete?redirect_flow_id=...
-    end
+    API-->>F: redirectUrl
+
+    F->>GC: Redirect to GoCardless mandate page
+    U->>GC: Enter bank details
+    GC-->>FE: Redirect to /join/complete?redirect_flow_id=...
+
     FE->>API: POST /signup/complete
     API-->>U: Confirmation email
     FE-->>U: /join/confirm-email
 ```
-
-The custom form only handles the steps up to the payment provider. The
-redirect back lands on the beabee frontend, which completes the signup and
-asks the user to confirm their email address.
