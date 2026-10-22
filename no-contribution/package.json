@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "start": "st -nc -i index.html"
+  },
+  "devDependencies": {
+    "st": "^3.0.0"
+  }
+}
