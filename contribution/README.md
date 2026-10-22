@@ -135,6 +135,17 @@ instead of hardcoding them:
 Also available: `taxRateRecurring` and `noticeText` for showing tax
 information next to the amount.
 
+### `GET /content/join/setup`
+
+Settings for the setup step after email confirmation. Use them to build a
+newsletter opt-in into your form:
+
+| Field | Used for |
+|---|---|
+| `showNewsletterOptIn` | Whether the instance asks about the newsletter at all |
+| `newsletterTitle`, `newsletterText`, `newsletterOptIn` | Heading, description and checkbox label from the membership builder |
+| `newsletterGroups` | `[{ id, label, checked }]`, the groups the user can pick and whether each is checked by default |
+
 ### `POST /signup`
 
 Starts the signup. Request body:
@@ -174,6 +185,8 @@ Optional fields:
 | `origin` | `{ source, medium, campaign }` from UTM parameters, stored on the contact |
 | `oneTimePayment` | `{ amount, payFee, paymentMethod, completeUrl }` for a one-off donation instead of `contribution` |
 | `password` | Sets the password up front so `/join/setup` doesn't have to ask for it. At least 8 characters with a lower case letter, an upper case letter and a digit. Rejected when the instance uses OIDC login. |
+| `newsletterStatus` | `subscribed`, `unsubscribed`, `pending`, `cleaned` or `none`. Applied when the email is confirmed, see [newsletter preferences](#newsletter-preferences). |
+| `newsletterGroups` | Array of group ids from `GET /content/join/setup`. Only meaningful together with `newsletterStatus: "subscribed"`. |
 
 `contribution` itself is optional to the API. Leaving out both `contribution`
 and `oneTimePayment` starts a signup without a payment, which the
@@ -230,6 +243,29 @@ API validates `payFee` with these rules:
 The form hides the opt-in and sends `false` in the first two cases, and shows
 a disabled, checked box in the third.
 
+## Newsletter preferences
+
+`POST /signup` accepts `newsletterStatus` and `newsletterGroups`. They are
+stored with the signup and applied to the contact when the email is
+confirmed, so the user doesn't have to set them again on `/join/setup`.
+
+* Leaving them out gives a new contact the instance's default newsletter
+  status.
+* An address that already belongs to a contact only has its preferences
+  changed when `newsletterStatus` is `subscribed`. Re-joining can never
+  unsubscribe someone.
+* Group ids that no longer exist on the instance are dropped silently, so a
+  cached list of groups won't make the signup fail.
+* The `/join/setup` page still shows the opt-in when the instance has groups,
+  with the chosen groups pre-selected, and hides it when the contact is
+  already subscribed and there are no groups.
+
+Only offer the opt-in when `showNewsletterOptIn` from
+`GET /content/join/setup` is on, and send `subscribed` only when the user
+ticked the box. For an unticked box leave both fields out rather than sending
+`unsubscribed`, so a new contact gets the instance default and an existing
+contact keeps what they have.
+
 ## Emails and existing accounts
 
 `POST /signup` always succeeds for a valid request, regardless of whether the
@@ -253,6 +289,9 @@ an address that gained an active membership in the meantime fails with a
   control them.
 * The Stripe Payment Element can be themed through `stripeAppearance` in
   `src/main.js`, see the Stripe appearance API docs.
+* Add a newsletter checkbox and group picker driven by
+  `GET /content/join/setup` and send the result as `newsletterStatus` and
+  `newsletterGroups`, see [newsletter preferences](#newsletter-preferences).
 * Everything after the payment provider redirect uses the beabee frontend.
   Keep `completeUrl`, `loginUrl`, `setPasswordUrl` and `confirmUrl` pointing
   there unless you also reimplement those pages.
