@@ -66,6 +66,17 @@ sequenceDiagram
 
 All endpoints are under `<frontendUrl>/api/1.0` and need no authentication.
 
+### `GET /content/join/setup`
+
+Settings for the setup step after email confirmation. Use them to build a
+newsletter opt-in into your form:
+
+| Field | Used for |
+|---|---|
+| `showNewsletterOptIn` | Whether the instance asks about the newsletter at all |
+| `newsletterTitle`, `newsletterText`, `newsletterOptIn` | Heading, description and checkbox label from the membership builder |
+| `newsletterGroups` | `[{ id, label, checked }]`, the groups the user can pick and whether each is checked by default |
+
 ### `POST /signup`
 
 Starts the signup. Request body:
@@ -90,6 +101,8 @@ Optional fields:
 |---|---|
 | `origin` | `{ source, medium, campaign }` from UTM parameters, stored on the contact |
 | `password` | Sets the password up front so `/join/setup` doesn't have to ask for it. At least 8 characters with a lower case letter, an upper case letter and a digit. Rejected when the instance uses OIDC login. |
+| `newsletterStatus` | `subscribed`, `unsubscribed`, `pending`, `cleaned` or `none`. Applied when the email is confirmed, see [newsletter preferences](#newsletter-preferences). |
+| `newsletterGroups` | Array of group ids from `GET /content/join/setup`. Only meaningful together with `newsletterStatus: "subscribed"`. |
 
 Leaving out `contribution` and `oneTimePayment` is what makes this a signup
 without a payment. Sending either starts a payment flow instead, see the
@@ -108,11 +121,35 @@ Response is one of:
 The confirmation email links to `confirmUrl/<id>`. The beabee frontend page
 at that URL calls `POST /signup/confirm-email` with the id, which creates the
 contact and logs them in. The frontend then continues to `/join/setup`, where
-the user enters their name, a password and the newsletter and address opt-ins
-configured in the membership builder. With OIDC login the frontend sends the
+the user enters their name, a password and the address opt-in configured in
+the membership builder. The newsletter opt-in is shown there too, unless the
+form already sent it with the signup. With OIDC login the frontend sends the
 user to the identity provider to set up their credential instead.
 
 The custom form is not involved in any of this.
+
+## Newsletter preferences
+
+`POST /signup` accepts `newsletterStatus` and `newsletterGroups`. They are
+stored with the signup and applied to the contact when the email is
+confirmed, so the user doesn't have to set them again on `/join/setup`.
+
+* Leaving them out gives a new contact the instance's default newsletter
+  status.
+* An address that already belongs to a contact only has its preferences
+  changed when `newsletterStatus` is `subscribed`. Re-joining can never
+  unsubscribe someone.
+* Group ids that no longer exist on the instance are dropped silently, so a
+  cached list of groups won't make the signup fail.
+* The `/join/setup` page still shows the opt-in when the instance has groups,
+  with the chosen groups pre-selected, and hides it when the contact is
+  already subscribed and there are no groups.
+
+Only offer the opt-in when `showNewsletterOptIn` from
+`GET /content/join/setup` is on, and send `subscribed` only when the user
+ticked the box. For an unticked box leave both fields out rather than sending
+`unsubscribed`, so a new contact gets the instance default and an existing
+contact keeps what they have.
 
 ## Emails and existing accounts
 
@@ -136,6 +173,9 @@ updated rather than duplicated.
 * Add a password field and send it as `password` if you want to skip the
   password step on `/join/setup`. Don't offer it on instances with OIDC
   login.
+* Add a newsletter checkbox and group picker driven by
+  `GET /content/join/setup` and send the result as `newsletterStatus` and
+  `newsletterGroups`, see [newsletter preferences](#newsletter-preferences).
 * Everything after the signup uses the beabee frontend. Keep `loginUrl`,
   `setPasswordUrl` and `confirmUrl` pointing there unless you also
   reimplement those pages.
