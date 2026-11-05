@@ -29,19 +29,21 @@ starting. The form then runs on http://localhost:1337.
   set.
 * The origin the form is served from, including the port, listed in the
   `BEABEE_TRUSTEDORIGINS` environment variable. The API rejects cross-origin
-  requests from any other origin.
+  requests from any other origin. The same list decides which origins are
+  accepted in `postConfirmUrl` and the email link URLs.
 
 No payment provider is involved, so no Stripe key or payment method setup is
 needed.
 
 ## How the flow works
 
-On submit the form calls `POST /signup` with only the email address and the
-URLs for the emails. The API stores the signup, sends the confirmation email
-straight away and responds with `204`. The form then sends the user to
-`/join/confirm-email` in the beabee frontend, which tells them to check their
-inbox. Clicking the link in the email creates the contact, logs them in and
-takes them to `/join/setup` to enter their name and password.
+On submit the form calls `POST /signup` with only the email address. The
+API stores the signup, sends the confirmation email straight away and
+responds with `204`. The form then sends the user to `/join/confirm-email`
+in the beabee frontend, which tells them to check their inbox. Clicking the
+link in the email creates the contact, logs them in and takes them to
+`/join/setup` to enter their name and password, or to the `postConfirmUrl`
+the form sent with the signup.
 
 ```mermaid
 sequenceDiagram
@@ -58,8 +60,8 @@ sequenceDiagram
 
     U->>FE: Open link /join/confirm-email/<id>
     FE->>API: POST /signup/confirm-email
-    API-->>FE: Contact created and logged in
-    FE-->>U: /join/setup for name and password
+    API-->>FE: Contact created and logged in, postConfirmUrl
+    FE-->>U: postConfirmUrl, or /join/setup for name and password
 ```
 
 ## API endpoints
@@ -83,17 +85,13 @@ Starts the signup. Request body:
 
 ```json
 {
-  "email": "user@example.com",
-  "loginUrl": "https://your.beabee.instance.io/auth/login",
-  "setPasswordUrl": "https://your.beabee.instance.io/auth/set-password",
-  "confirmUrl": "https://your.beabee.instance.io/join/confirm-email"
+  "email": "user@example.com"
 }
 ```
 
 | Field | Rules |
 |---|---|
 | `email` | Valid email address |
-| `loginUrl`, `setPasswordUrl`, `confirmUrl` | Links used in the emails the API sends. Keep them on the beabee frontend. |
 
 Optional fields:
 
@@ -103,6 +101,8 @@ Optional fields:
 | `password` | Sets the password up front so `/join/setup` doesn't have to ask for it. At least 8 characters with a lower case letter, an upper case letter and a digit. Rejected when the instance uses OIDC login. |
 | `newsletterStatus` | `subscribed`, `unsubscribed`, `pending`, `cleaned` or `none`. Applied when the email is confirmed, see [newsletter preferences](#newsletter-preferences). |
 | `newsletterGroups` | Array of group ids from `GET /content/join/setup`. Only meaningful together with `newsletterStatus: "subscribed"`. |
+| `postConfirmUrl` | Where the beabee frontend sends the user after they confirm their email, instead of `/join/setup`. A path on the instance, or an absolute URL on the instance's origin or one in `BEABEE_TRUSTEDORIGINS`. See [after confirmation](#after-confirmation). |
+| `loginUrl`, `setPasswordUrl`, `confirmUrl` | Override the links in the emails the API sends. Default to `/auth/login`, `/auth/set-password` and `/join/confirm-email` on the instance. Only needed if you reimplement those pages, and must be absolute URLs on the instance's origin or one in `BEABEE_TRUSTEDORIGINS`. |
 
 Leaving out `contribution` and `oneTimePayment` is what makes this a signup
 without a payment. Sending either starts a payment flow instead, see the
@@ -118,15 +118,38 @@ Response is one of:
 
 ### Confirmation
 
-The confirmation email links to `confirmUrl/<id>`. The beabee frontend page
-at that URL calls `POST /signup/confirm-email` with the id, which creates the
-contact and logs them in. The frontend then continues to `/join/setup`, where
-the user enters their name, a password and the address opt-in configured in
-the membership builder. The newsletter opt-in is shown there too, unless the
-form already sent it with the signup. With OIDC login the frontend sends the
-user to the identity provider to set up their credential instead.
+The confirmation email links to `/join/confirm-email/<id>`. The beabee
+frontend page at that URL calls `POST /signup/confirm-email` with the id,
+which creates the contact and logs them in. The response is:
 
+```json
+{
+  "postConfirmUrl": null
+}
+```
+
+`postConfirmUrl` is whatever the signup sent, or `null` for the default.
 The custom form is not involved in any of this.
+
+### After confirmation
+
+By default the frontend continues to `/join/setup` after confirming the
+email, where the user enters their name, a password and the address opt-in
+configured in the membership builder. The newsletter opt-in is shown there
+too, unless the form already sent it with the signup.
+
+Send `postConfirmUrl` with the signup to continue somewhere else instead,
+for example a welcome page on your own site. The user is logged in to the
+instance at that point. A path such as `/profile` stays inside the beabee
+frontend; an absolute URL is loaded as a new page and must be on the
+instance's origin or one listed in `BEABEE_TRUSTEDORIGINS`, which the
+form's own origin already is. With OIDC login the frontend sends the user to
+the identity provider to set up their credential first and returns to the
+URL afterwards.
+
+Skipping `/join/setup` also skips everything it collects. Send `password`
+with the signup or rely on OIDC login, and collect the name on your own
+page, or the contact ends up without a name and without a password.
 
 ## Newsletter preferences
 
@@ -158,9 +181,13 @@ email address is already known. The API immediately sends one of:
 
 | Situation | Email |
 |---|---|
-| New contact or inactive membership | Confirm email, linking to `confirmUrl/<id>` |
-| Active membership, has a password | Already registered, linking to `loginUrl` |
-| Active membership, no password | Set password, linking to `setPasswordUrl/<id>` |
+| New contact or inactive membership | Confirm email, linking to `/join/confirm-email/<id>` |
+| Active membership, has a password | Already registered, linking to `/auth/login` |
+| Active membership, no password | Set password, linking to `/auth/set-password/<id>` |
+
+The links point at the instance unless the signup set `confirmUrl`,
+`loginUrl` or `setPasswordUrl`, in which case the `<id>` is appended to the
+given URL in the same way.
 
 Confirming the email creates the contact and sends the welcome email. If a
 contact without an active membership already exists for the address, it is
@@ -176,6 +203,8 @@ updated rather than duplicated.
 * Add a newsletter checkbox and group picker driven by
   `GET /content/join/setup` and send the result as `newsletterStatus` and
   `newsletterGroups`, see [newsletter preferences](#newsletter-preferences).
-* Everything after the signup uses the beabee frontend. Keep `loginUrl`,
-  `setPasswordUrl` and `confirmUrl` pointing there unless you also
-  reimplement those pages.
+* Send `postConfirmUrl` to bring the user back to your site once their
+  email is confirmed, see [after confirmation](#after-confirmation).
+* Everything after the signup uses the beabee frontend. Only send
+  `loginUrl`, `setPasswordUrl` or `confirmUrl` if you reimplement those
+  pages.

@@ -29,7 +29,8 @@ starting. The form then runs on http://localhost:1337.
   doesn't offer.
 * The origin the form is served from, including the port, listed in the
   `BEABEE_TRUSTEDORIGINS` environment variable. The API rejects cross-origin
-  requests from any other origin.
+  requests from any other origin. The same list decides which origins are
+  accepted in `postConfirmUrl` and the email link URLs.
 * The `@beabee/beabee-common` package, which provides the fee calculation and
   the payment method constants used by the API.
 
@@ -160,10 +161,7 @@ Starts the signup. Request body:
     "prorate": false,
     "paymentMethod": "s_card",
     "completeUrl": "https://your.beabee.instance.io/join/complete"
-  },
-  "loginUrl": "https://your.beabee.instance.io/auth/login",
-  "setPasswordUrl": "https://your.beabee.instance.io/auth/set-password",
-  "confirmUrl": "https://your.beabee.instance.io/join/confirm-email"
+  }
 }
 ```
 
@@ -176,7 +174,6 @@ Starts the signup. Request body:
 | `contribution.prorate` | Always `false` for new signups |
 | `contribution.paymentMethod` | `gc_direct-debit`, `s_card`, `s_sepa`, `s_bacs`, `s_paypal` or `s_ideal` |
 | `contribution.completeUrl` | Where the payment provider redirects to afterwards. Keep it on the beabee frontend. |
-| `loginUrl`, `setPasswordUrl`, `confirmUrl` | Links used in the emails the API sends. Keep them on the beabee frontend. |
 
 Optional fields:
 
@@ -187,6 +184,8 @@ Optional fields:
 | `password` | Sets the password up front so `/join/setup` doesn't have to ask for it. At least 8 characters with a lower case letter, an upper case letter and a digit. Rejected when the instance uses OIDC login. |
 | `newsletterStatus` | `subscribed`, `unsubscribed`, `pending`, `cleaned` or `none`. Applied when the email is confirmed, see [newsletter preferences](#newsletter-preferences). |
 | `newsletterGroups` | Array of group ids from `GET /content/join/setup`. Only meaningful together with `newsletterStatus: "subscribed"`. |
+| `postConfirmUrl` | Where the beabee frontend sends the user after they confirm their email, instead of `/join/setup`. A path on the instance, or an absolute URL on the instance's origin or one in `BEABEE_TRUSTEDORIGINS`. See [after confirmation](#after-confirmation). |
+| `loginUrl`, `setPasswordUrl`, `confirmUrl` | Override the links in the emails the API sends. Default to `/auth/login`, `/auth/set-password` and `/join/confirm-email` on the instance. Only needed if you reimplement those pages, and must be absolute URLs on the instance's origin or one in `BEABEE_TRUSTEDORIGINS`. |
 
 `contribution` itself is optional to the API. Leaving out both `contribution`
 and `oneTimePayment` starts a signup without a payment, which the
@@ -215,6 +214,49 @@ beabee frontend, which calls `POST /signup/complete` and then shows
 | `vatNumber` | Your form, optional |
 
 GoCardless collects the name itself, so it is only passed for Stripe.
+
+### Confirmation
+
+The confirmation email links to `/join/confirm-email/<id>`. The beabee
+frontend page at that URL calls `POST /signup/confirm-email` with the id,
+which creates the contact, starts the contribution and logs them in. The
+response is:
+
+```json
+{
+  "postConfirmUrl": null,
+  "paymentClientSecret": "seti_..."
+}
+```
+
+`paymentClientSecret` is only set when the first payment needs the user to
+authenticate it, for example with 3D Secure. The frontend runs that
+challenge before continuing. A failed challenge still continues, the
+contact is signed up and logged in either way, and Stripe expires the
+subscription if the payment is never authenticated.
+
+The custom form is not involved in any of this.
+
+### After confirmation
+
+By default the frontend continues to `/join/setup` after confirming the
+email, where the user sets a password and the address opt-in configured in
+the membership builder. The name is already known from the payment step.
+The newsletter opt-in is shown there too, unless the form already sent it
+with the signup.
+
+Send `postConfirmUrl` with the signup to continue somewhere else instead,
+for example a welcome page on your own site. The user is logged in to the
+instance at that point. A path such as `/profile` stays inside the beabee
+frontend; an absolute URL is loaded as a new page and must be on the
+instance's origin or one listed in `BEABEE_TRUSTEDORIGINS`, which the
+form's own origin already is. With OIDC login the frontend sends the user to
+the identity provider to set up their credential first and returns to the
+URL afterwards.
+
+Skipping `/join/setup` also skips everything it collects. Send `password`
+with the signup or rely on OIDC login, otherwise the contact has no
+password and has to use the reset flow to log in again.
 
 ## Stripe integration
 
@@ -274,9 +316,13 @@ sends one of:
 
 | Situation | Email |
 |---|---|
-| New contact or inactive membership | Confirm email, linking to `confirmUrl/<id>` |
-| Active membership, has a password | Already registered, linking to `loginUrl` |
-| Active membership, no password | Set password, linking to `setPasswordUrl/<id>` |
+| New contact or inactive membership | Confirm email, linking to `/join/confirm-email/<id>` |
+| Active membership, has a password | Already registered, linking to `/auth/login` |
+| Active membership, no password | Set password, linking to `/auth/set-password/<id>` |
+
+The links point at the instance unless the signup set `confirmUrl`,
+`loginUrl` or `setPasswordUrl`, in which case the `<id>` is appended to the
+given URL in the same way.
 
 Confirming the email creates the contact and logs them in. A confirm link for
 an address that gained an active membership in the meantime fails with a
@@ -292,6 +338,8 @@ an address that gained an active membership in the meantime fails with a
 * Add a newsletter checkbox and group picker driven by
   `GET /content/join/setup` and send the result as `newsletterStatus` and
   `newsletterGroups`, see [newsletter preferences](#newsletter-preferences).
+* Send `postConfirmUrl` to bring the user back to your site once their
+  email is confirmed, see [after confirmation](#after-confirmation).
 * Everything after the payment provider redirect uses the beabee frontend.
-  Keep `completeUrl`, `loginUrl`, `setPasswordUrl` and `confirmUrl` pointing
-  there unless you also reimplement those pages.
+  Keep `completeUrl` pointing there, and only send `loginUrl`,
+  `setPasswordUrl` or `confirmUrl` if you reimplement those pages.

@@ -149,9 +149,9 @@ function handleStep2() {
       paymentMethod: contribution.paymentMethod,
       completeUrl
     },
-    loginUrl: `${frontendUrl}/auth/login`,
-    setPasswordUrl: `${frontendUrl}/auth/set-password`,
-    confirmUrl: `${frontendUrl}/join/confirm-email`,
+    // Where the beabee frontend sends the user after they confirm their
+    // email. Leave it out to continue to /join/setup on the instance.
+    // postConfirmUrl: window.location.origin + '/welcome',
   };
 
   const request = new Request(`${apiUrl}/signup`, {

@@ -14,4 +14,5 @@ instance:
 
 Each example is self-contained with its own `package.json` and README. In
 both cases everything after the signup, from email confirmation to account
-setup, is handled by the beabee frontend.
+setup, is handled by the beabee frontend. A form can send `postConfirmUrl`
+to bring the user back to its own site once their email is confirmed.
