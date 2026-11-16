@@ -28,6 +28,9 @@ const stripeAppearance = {
 
 const stepFormEls = $$('.js-form');
 
+// Shown when a step fails without a message that is meant for the user
+const genericError = 'Something went wrong, please try again';
+
 // Instance settings loaded from the API: fee country, Stripe key, minimum amount
 let joinContent, paymentContent;
 const contentPromise = Promise.all([
@@ -163,10 +166,17 @@ function handleStep2() {
   });
 
   return fetch(request)
-    .then(resp => resp.json())
+    .then(resp => {
+      if (resp.status === 429) {
+        throw new Error('Too many attempts, please try again in a minute');
+      }
+      if (!resp.ok) {
+        throw new Error('Please check your details and try again');
+      }
+      return resp.json();
+    })
     .then(respData => {
       if (respData.redirectUrl) {
-        console.log(respData);
         // Redirect the user to a payment flow
         window.location.href = respData.redirectUrl;
         return false;
@@ -205,12 +215,26 @@ function handleStep2() {
 }
 
 /**
+ * Pick the message to show for a failed Stripe confirmation. Card and
+ * validation errors, and a failed 3D Secure check, carry a message written
+ * for the customer in their browser's language. Anything else is a problem
+ * with the integration and its message is meant for developers.
+ */
+function getStripeErrorMessage(error) {
+  const isForCustomer =
+    error.type === 'card_error' ||
+    error.type === 'validation_error' ||
+    error.code === 'setup_intent_authentication_failure';
+  return isForCustomer && error.message ? error.message : genericError;
+}
+
+/**
  * Third step handler. Just for Stripe payments. Confirms the setup intention
  * with Stripe, which will then trigger a redirect
  */
 function handleStep3() {
   if (!stripe || !stripeElements || !stripeIsComplete) {
-    return Promise.reject();
+    return Promise.reject(new Error('Please complete your payment details'));
   };
 
   const contribution = getContribution();
@@ -226,6 +250,14 @@ function handleStep3() {
         },
       },
     }
+  }).then(result => {
+    // Stripe resolves rather than rejects when the confirmation fails, for
+    // example when the card is declined or the bank refuses the 3D Secure check
+    if (result.error) {
+      throw new Error(getStripeErrorMessage(result.error));
+    }
+    // On success Stripe is already redirecting to the return_url
+    return false;
   });
 }
 
@@ -234,7 +266,9 @@ const stepHandlers = [handleStep1, handleStep2, handleStep3];
 /**
  * Submit button handler for all steps. Handles any async processing
  * done by the step handler, then progresses the users to the next step
- * if the step handler has returned true
+ * if the step handler has returned true. A handler that returns false is
+ * redirecting the user away, so the button stays in its loading state. A
+ * handler that fails keeps the user on the step and shows them why
  */
 function handleSubmit(e) {
   e.preventDefault();
@@ -242,10 +276,12 @@ function handleSubmit(e) {
   const stepNo = stepFormEls.indexOf(this);
 
   const nextStepEl = stepFormEls[stepNo + 1];
+  const errorEl = $('.js-error', this);
 
   const submitEl = e.submitter;
   submitEl.disabled = true;
   submitEl.classList.add('is-loading');
+  errorEl.classList.add('d-none');
 
   stepHandlers[stepNo]()
     .then((showNextStep) => {
@@ -256,7 +292,9 @@ function handleSubmit(e) {
         submitEl.classList.remove('is-loading');
       }
     })
-    .catch(() => {
+    .catch((err) => {
+      errorEl.textContent = err.message || genericError;
+      errorEl.classList.remove('d-none');
       submitEl.disabled = false;
       submitEl.classList.remove('is-loading');
     });
@@ -274,8 +312,6 @@ function handleBack(e) {
 
   const stepNo = stepFormEls.indexOf(this);
   const prevStepEl = stepFormEls[stepNo - 1];
-
-  console.log(stepNo);
 
   this.classList.add('d-none');
   prevStepEl.classList.remove('d-none');
