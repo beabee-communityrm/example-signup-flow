@@ -271,6 +271,12 @@ Step 3 uses the Stripe Payment Element with the client secret from
 * Call `stripe.confirmSetup` with the `return_url` set to the complete URL plus
   `firstName` and `lastName`, and `billing_details` with email and full name.
   Stripe redirects to the return URL with `setup_intent` appended.
+* Check the result of `confirmSetup`. It resolves with an `error` instead of
+  rejecting when the card is declined or the bank refuses the 3D Secure check,
+  and nothing redirects. Show `error.message` for the types `card_error` and
+  `validation_error` and for the code `setup_intent_authentication_failure`,
+  which are written for the customer, and keep them on the step so they can
+  try another card.
 
 ## Fee rules
 
