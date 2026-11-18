@@ -184,6 +184,7 @@ Optional fields:
 | `password` | Sets the password up front so `/join/setup` doesn't have to ask for it. At least 8 characters with a lower case letter, an upper case letter and a digit. Rejected when the instance uses OIDC login. |
 | `newsletterStatus` | `subscribed`, `unsubscribed`, `pending`, `cleaned` or `none`. Applied when the email is confirmed, see [newsletter preferences](#newsletter-preferences). |
 | `newsletterGroups` | Array of group ids from `GET /content/join/setup`. Only meaningful together with `newsletterStatus: "subscribed"`. |
+| `firstname`, `lastname` | Stored on the contact when the email is confirmed, replacing the name of an existing contact with the same email. Also used in the confirmation email. Take precedence over the name collected for the payment, see [completion](#completion). |
 | `postConfirmUrl` | Where the beabee frontend sends the user after they confirm their email, instead of `/join/setup`. A path on the instance, or an absolute URL on the instance's origin or one in `BEABEE_TRUSTEDORIGINS`. See [after confirmation](#after-confirmation). |
 | `loginUrl`, `setPasswordUrl`, `confirmUrl` | Override the links in the emails the API sends. Default to `/auth/login`, `/auth/set-password` and `/join/confirm-email` on the instance. Only needed if you reimplement those pages, and must be absolute URLs on the instance's origin or one in `BEABEE_TRUSTEDORIGINS`. |
 
@@ -213,7 +214,9 @@ beabee frontend, which calls `POST /signup/complete` and then shows
 | `firstName`, `lastName` | Your form, via the Stripe `return_url` |
 | `vatNumber` | Your form, optional |
 
-GoCardless collects the name itself, so it is only passed for Stripe.
+GoCardless collects the name itself, so it is only passed for Stripe. A
+`firstname` or `lastname` sent with `POST /signup` takes precedence over
+the name from either payment provider.
 
 ### Confirmation
 

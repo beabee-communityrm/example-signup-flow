@@ -101,6 +101,7 @@ Optional fields:
 | `password` | Sets the password up front so `/join/setup` doesn't have to ask for it. At least 8 characters with a lower case letter, an upper case letter and a digit. Rejected when the instance uses OIDC login. |
 | `newsletterStatus` | `subscribed`, `unsubscribed`, `pending`, `cleaned` or `none`. Applied when the email is confirmed, see [newsletter preferences](#newsletter-preferences). |
 | `newsletterGroups` | Array of group ids from `GET /content/join/setup`. Only meaningful together with `newsletterStatus: "subscribed"`. |
+| `firstname`, `lastname` | Stored on the contact when the email is confirmed, replacing the name of an existing contact with the same email. Also used in the confirmation email. |
 | `postConfirmUrl` | Where the beabee frontend sends the user after they confirm their email, instead of `/join/setup`. A path on the instance, or an absolute URL on the instance's origin or one in `BEABEE_TRUSTEDORIGINS`. See [after confirmation](#after-confirmation). |
 | `loginUrl`, `setPasswordUrl`, `confirmUrl` | Override the links in the emails the API sends. Default to `/auth/login`, `/auth/set-password` and `/join/confirm-email` on the instance. Only needed if you reimplement those pages, and must be absolute URLs on the instance's origin or one in `BEABEE_TRUSTEDORIGINS`. |
 
@@ -148,8 +149,8 @@ the identity provider to set up their credential first and returns to the
 URL afterwards.
 
 Skipping `/join/setup` also skips everything it collects. Send `password`
-with the signup or rely on OIDC login, and collect the name on your own
-page, or the contact ends up without a name and without a password.
+with the signup or rely on OIDC login, and send `firstname` and `lastname`,
+or the contact ends up without a name and without a password.
 
 ## Newsletter preferences
 
